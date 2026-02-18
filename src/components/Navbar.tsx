@@ -7,12 +7,12 @@ export default function Navbar() {
   const { data: session } = useSession();
 
   return (
-    <nav className="w-full bg-emerald-950/80 backdrop-blur border-b border-amber-500/20">
+    <nav className="w-full bg-[#161b22]/90 backdrop-blur border-b border-[#30363d]">
       <div className="max-w-5xl mx-auto flex items-center justify-between px-4 py-3">
         {/* Logo / Title */}
         <Link href="/" className="flex items-center gap-2">
           <span className="text-2xl">🌙</span>
-          <span className="text-lg font-bold bg-linear-to-r from-amber-300 to-amber-500 bg-clip-text text-transparent">
+          <span className="text-lg font-bold text-[#e6edf3]">
             Ramadan Tracker
           </span>
         </Link>
@@ -20,12 +20,12 @@ export default function Navbar() {
         {/* User info */}
         {session?.user ? (
           <div className="flex items-center gap-4">
-            <span className="text-sm text-emerald-200 hidden sm:block">
+            <span className="text-sm text-[#8b949e] hidden sm:block">
               {session.user.name}
             </span>
             <button
               onClick={() => signOut()}
-              className="text-xs bg-emerald-800 hover:bg-emerald-700 text-amber-200 px-3 py-1.5 rounded-lg transition"
+              className="text-xs bg-[#21262d] hover:bg-[#30363d] text-[#e6edf3] border border-[#30363d] px-3 py-1.5 rounded-lg transition"
             >
               Log out
             </button>
@@ -33,7 +33,7 @@ export default function Navbar() {
         ) : (
           <Link
             href="/login"
-            className="text-sm bg-amber-500 hover:bg-amber-400 text-emerald-950 font-semibold px-4 py-1.5 rounded-lg transition"
+            className="text-sm bg-[#238636] hover:bg-[#2ea043] text-white font-semibold px-4 py-1.5 rounded-lg transition"
           >
             Log in
           </Link>

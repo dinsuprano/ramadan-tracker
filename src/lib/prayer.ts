@@ -85,47 +85,68 @@ export async function fetchPrayerTimes(zone: string): Promise<PrayerTime | null>
     if (!res.ok) return null;
 
     const data = await res.json();
-    // The API returns an array of prayer times; find today's entry
-    const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+    const prayers: Record<string, unknown>[] = data.prayers ?? data.data ?? [];
+    if (prayers.length === 0) return null;
 
-    const prayers = data.prayers ?? data.data ?? [];
-    const todayEntry = prayers.find((p: Record<string, string>) => {
-      const d = p.date ?? p.Date;
-      return d?.startsWith(today);
-    });
+    // The v2 API returns { day: 1, hijri: "...", fajr: <unix>, ... }
+    // Find today's entry by day-of-month
+    const todayDay = new Date().getDate();
+    const todayEntry = prayers.find(
+      (p) => Number(p.day) === todayDay
+    );
 
-    if (!todayEntry) {
-      // Fallback: return the first entry (current day)
-      const p = prayers[0];
-      if (!p) return null;
-      return normalisePrayer(p);
-    }
+    const entry = todayEntry ?? prayers[0];
+    if (!entry) return null;
 
-    return normalisePrayer(todayEntry);
+    return normalisePrayer(entry);
   } catch (err) {
     console.error("Failed to fetch prayer times:", err);
     return null;
   }
 }
 
-function normalisePrayer(p: Record<string, string>): PrayerTime {
-  return {
-    hijri: p.hijri ?? p.Hijri ?? "",
-    date: p.date ?? p.Date ?? "",
-    day: p.day ?? p.Day ?? "",
-    imsak: formatTime(p.imsak ?? p.Imsak ?? ""),
-    fajr: formatTime(p.fajr ?? p.Fajr ?? p.subuh ?? p.Subuh ?? ""),
-    syuruk: formatTime(p.syuruk ?? p.Syuruk ?? ""),
-    dhuhr: formatTime(p.dhuhr ?? p.Dhuhr ?? p.zohor ?? p.Zohor ?? ""),
-    asr: formatTime(p.asr ?? p.Asr ?? ""),
-    maghrib: formatTime(p.maghrib ?? p.Maghrib ?? ""),
-    isha: formatTime(p.isha ?? p.Isha ?? p.isyak ?? p.Isyak ?? ""),
-  };
+/** Convert a value that may be a Unix timestamp (seconds) or a time string to "HH:MM" */
+function toTimeString(v: unknown): string {
+  if (v == null) return "-";
+  // Unix timestamp (number or numeric string)
+  if (typeof v === "number" || (typeof v === "string" && /^\d{8,}$/.test(v))) {
+    const d = new Date(Number(v) * 1000);
+    // Format in Malaysia timezone (UTC+8)
+    return d.toLocaleTimeString("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "Asia/Kuala_Lumpur",
+    });
+  }
+  // Already a time string like "HH:MM:SS" or "HH:MM"
+  if (typeof v === "string") {
+    const parts = v.split(":");
+    return parts.length >= 2 ? `${parts[0]}:${parts[1]}` : v;
+  }
+  return "-";
 }
 
-/** Strip seconds from "HH:MM:SS" → "HH:MM" */
-function formatTime(t: string): string {
-  if (!t) return "-";
-  const parts = t.split(":");
-  return parts.length >= 2 ? `${parts[0]}:${parts[1]}` : t;
+function normalisePrayer(p: Record<string, unknown>): PrayerTime {
+  const fajrTs = p.fajr ?? p.Fajr ?? p.subuh ?? p.Subuh;
+  // Imsak is typically ~10 minutes before Fajr
+  let imsakStr = toTimeString(p.imsak ?? p.Imsak);
+  if (imsakStr === "-" && fajrTs != null && typeof fajrTs === "number") {
+    imsakStr = toTimeString(fajrTs - 600); // 10 minutes before fajr
+  }
+
+  const dateVal = p.date ?? p.Date;
+  const dayVal = p.day ?? p.Day;
+
+  return {
+    hijri: String(p.hijri ?? p.Hijri ?? ""),
+    date: dateVal != null ? String(dateVal) : "",
+    day: dayVal != null ? String(dayVal) : "",
+    imsak: imsakStr,
+    fajr: toTimeString(fajrTs),
+    syuruk: toTimeString(p.syuruk ?? p.Syuruk),
+    dhuhr: toTimeString(p.dhuhr ?? p.Dhuhr ?? p.zohor ?? p.Zohor),
+    asr: toTimeString(p.asr ?? p.Asr),
+    maghrib: toTimeString(p.maghrib ?? p.Maghrib),
+    isha: toTimeString(p.isha ?? p.Isha ?? p.isyak ?? p.Isyak),
+  };
 }

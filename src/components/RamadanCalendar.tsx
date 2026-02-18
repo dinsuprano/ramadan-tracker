@@ -2,32 +2,23 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { format, isToday, isPast } from "date-fns";
-import { RAMADAN_DAYS, dateKey } from "@/lib/ramadan";
-
-interface FastingMap {
-  [date: string]: boolean;
-}
+import { RAMADAN_DAYS, RAMADAN_START, RAMADAN_END, dateKey } from "@/lib/ramadan";
 
 export default function RamadanCalendar() {
-  const [fasting, setFasting] = useState<FastingMap>({});
+  // A Set of date strings like "2026-02-19" that are fasted
+  const [fastedDates, setFastedDates] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
-  const [toggling, setToggling] = useState<string | null>(null);
+  const [busyDates, setBusyDates] = useState<Set<string>>(new Set());
 
   // Fetch existing logs
   const fetchLogs = useCallback(async () => {
     try {
-      const res = await fetch(
-        `/api/fasting?start=2026-02-18&end=2026-03-19`
-      );
+      const start = dateKey(RAMADAN_START);
+      const end = dateKey(RAMADAN_END);
+      const res = await fetch(`/api/fasting?start=${start}&end=${end}`);
       if (!res.ok) return;
       const data = await res.json();
-      const map: FastingMap = {};
-      for (const log of data.logs) {
-        // date comes as "2026-02-18" or with time
-        const d = (log.date as string).split("T")[0];
-        map[d] = log.is_fasting;
-      }
-      setFasting(map);
+      setFastedDates(new Set(data.dates as string[]));
     } catch (err) {
       console.error("Failed to fetch fasting logs", err);
     } finally {
@@ -41,33 +32,69 @@ export default function RamadanCalendar() {
 
   const toggle = async (day: Date) => {
     const dk = dateKey(day);
-    setToggling(dk);
-    const current = fasting[dk] ?? false;
-    const next = !current;
+    if (busyDates.has(dk)) return; // prevent double-click
+
+    const isFasted = fastedDates.has(dk);
+
+    // Mark busy
+    setBusyDates((prev) => new Set(prev).add(dk));
 
     // Optimistic update
-    setFasting((prev) => ({ ...prev, [dk]: next }));
+    setFastedDates((prev) => {
+      const next = new Set(prev);
+      if (isFasted) {
+        next.delete(dk);
+      } else {
+        next.add(dk);
+      }
+      return next;
+    });
 
     try {
-      await fetch("/api/fasting", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date: dk, isFasting: next }),
-      });
+      let res: Response;
+      if (isFasted) {
+        // Untick → DELETE the row
+        res = await fetch(`/api/fasting?date=${dk}`, { method: "DELETE" });
+      } else {
+        // Tick → INSERT a row
+        res = await fetch("/api/fasting", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ date: dk }),
+        });
+      }
+      if (!res.ok) {
+        // Revert on server error
+        setFastedDates((prev) => {
+          const reverted = new Set(prev);
+          if (isFasted) reverted.add(dk);
+          else reverted.delete(dk);
+          return reverted;
+        });
+      }
     } catch {
-      // Revert on failure
-      setFasting((prev) => ({ ...prev, [dk]: current }));
+      // Revert on network error
+      setFastedDates((prev) => {
+        const reverted = new Set(prev);
+        if (isFasted) reverted.add(dk);
+        else reverted.delete(dk);
+        return reverted;
+      });
     } finally {
-      setToggling(null);
+      setBusyDates((prev) => {
+        const next = new Set(prev);
+        next.delete(dk);
+        return next;
+      });
     }
   };
 
-  const totalFasted = Object.values(fasting).filter(Boolean).length;
+  const totalFasted = fastedDates.size;
 
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin h-8 w-8 border-4 border-amber-400 border-t-transparent rounded-full" />
+        <div className="animate-spin h-8 w-8 border-4 border-[#58a6ff] border-t-transparent rounded-full" />
       </div>
     );
   }
@@ -76,18 +103,18 @@ export default function RamadanCalendar() {
     <div>
       {/* Stats bar */}
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-amber-300">
+        <h2 className="text-lg font-semibold text-[#e6edf3]">
           🗓️ Ramadan 1447H / 2026
         </h2>
-        <span className="text-sm text-emerald-300">
-          Fasted: <strong className="text-amber-400">{totalFasted}</strong> / {RAMADAN_DAYS.length} days
+        <span className="text-sm text-[#8b949e]">
+          Fasted: <strong className="text-[#3fb950]">{totalFasted}</strong> / {RAMADAN_DAYS.length} days
         </span>
       </div>
 
       {/* Progress bar */}
-      <div className="w-full bg-emerald-900 rounded-full h-2.5 mb-6">
+      <div className="w-full bg-[#21262d] rounded-full h-2.5 mb-6">
         <div
-          className="bg-linear-to-r from-amber-400 to-amber-600 h-2.5 rounded-full transition-all duration-500"
+          className="bg-linear-to-r from-[#238636] to-[#3fb950] h-2.5 rounded-full transition-all duration-500"
           style={{ width: `${(totalFasted / RAMADAN_DAYS.length) * 100}%` }}
         />
       </div>
@@ -96,40 +123,40 @@ export default function RamadanCalendar() {
       <div className="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-7 gap-2">
         {RAMADAN_DAYS.map((day, idx) => {
           const dk = dateKey(day);
-          const fasted = fasting[dk] ?? false;
+          const fasted = fastedDates.has(dk);
           const today = isToday(day);
           const past = isPast(day) && !today;
-          const isToggling = toggling === dk;
+          const isBusy = busyDates.has(dk);
 
           return (
             <button
               key={dk}
               onClick={() => toggle(day)}
-              disabled={isToggling}
+              disabled={isBusy}
               className={`
                 relative flex flex-col items-center justify-center p-2 rounded-xl
                 text-xs sm:text-sm font-medium transition-all duration-200
                 border
                 ${
                   fasted
-                    ? "bg-amber-500/20 border-amber-500 text-amber-300 shadow-lg shadow-amber-500/10"
+                    ? "bg-[#238636]/20 border-[#3fb950] text-[#3fb950] shadow-lg shadow-[#3fb950]/10"
                     : past
-                    ? "bg-red-500/10 border-red-500/30 text-red-300/60"
-                    : "bg-emerald-900/50 border-emerald-700/40 text-emerald-300 hover:border-amber-400/60"
+                    ? "bg-[#da3633]/10 border-[#da3633]/30 text-[#f85149]/60"
+                    : "bg-[#161b22] border-[#30363d] text-[#8b949e] hover:border-[#58a6ff]/60"
                 }
-                ${today ? "ring-2 ring-amber-400 ring-offset-2 ring-offset-emerald-950" : ""}
-                ${isToggling ? "opacity-60" : ""}
+                ${today ? "ring-2 ring-[#58a6ff] ring-offset-2 ring-offset-[#0d1117]" : ""}
+                ${isBusy ? "opacity-60" : ""}
               `}
             >
               {/* Day number (Ramadan day) */}
-              <span className="text-[10px] text-emerald-400/70">Day {idx + 1}</span>
+              <span className="text-[10px] text-[#484f58]">Day {idx + 1}</span>
               <span className="font-bold text-sm">{format(day, "d MMM")}</span>
               {/* Status icon */}
               <span className="mt-1 text-base">
                 {fasted ? "✅" : past ? "❌" : "⬜"}
               </span>
               {today && (
-                <span className="absolute -top-1 -right-1 text-[10px] bg-amber-500 text-emerald-950 px-1 rounded-md font-bold">
+                <span className="absolute -top-1 -right-1 text-[10px] bg-[#58a6ff] text-[#0d1117] px-1 rounded-md font-bold">
                   TODAY
                 </span>
               )}
