@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Ramadan Tracker 🌙",
+  title: "Ramadan Tracker",
   description: "Track your fasting and prayer times for Ramadan 1447H / 2026",
 };
 

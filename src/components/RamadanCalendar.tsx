@@ -150,6 +150,8 @@ export default function RamadanCalendar() {
             >
               {/* Day number (Ramadan day) */}
               <span className="text-[10px] text-[#484f58]">Day {idx + 1}</span>
+              {/* Day name */}
+              <span className="text-[10px] text-[#484f58] uppercase tracking-wide">{format(day, "EEE")}</span>
               <span className="font-bold text-sm">{format(day, "d MMM")}</span>
               {/* Status icon */}
               <span className="mt-1 text-base">
